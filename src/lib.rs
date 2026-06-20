@@ -1,5 +1,4 @@
-//! A wrapper for the NASA API
-
+#![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
 use std::{
@@ -117,17 +116,22 @@ impl<T> Deref for ApiResponse<T> {
     }
 }
 
+/// Represents an error
 #[derive(thiserror::Error, Debug)]
 pub enum RequestError {
+    /// Request Failed due to a network or parsing issue
     #[error("request failed: {0}")]
     RequestFailed(#[from] reqwest::Error),
 
+    /// Hourly ratelimit reached
     #[error("ratelimit reached")]
     Ratelimit,
 
+    /// Parsing returned JSON failed
     #[error("parsing returned JSON failed: {0}")]
     JsonParseError(#[from] serde_json::Error),
 
+    /// An unexpected error occured
     #[error("unexpected error: {0}")]
     UnexpectedError(&'static str),
 }

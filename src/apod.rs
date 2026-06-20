@@ -1,3 +1,4 @@
+///! The Astronomy Picture of the Day API
 use serde::Deserialize;
 
 use crate::Date;
