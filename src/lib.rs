@@ -2,20 +2,25 @@
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+use core::fmt;
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
     ops::Deref,
+    sync::Arc,
 };
 
 #[cfg(feature = "apod")]
 use crate::apod::{ApodQuery, ApodResponse};
+#[cfg(feature = "neo_ws")]
+use crate::neo_ws::NeoWs;
+
 use reqwest::{
     Response, StatusCode,
     header::{HeaderMap, HeaderValue},
 };
 use serde::{
-    Deserialize, Serialize,
+    Deserialize, Deserializer, Serialize,
     de::{Unexpected, Visitor},
 };
 
@@ -24,6 +29,9 @@ const API_BASE_ADDRESS: &str = "https://api.nasa.gov";
 /// The Astronomy Picture of the Day API
 #[cfg(feature = "apod")]
 pub mod apod;
+/// The Near Earth Object Web Service API
+#[cfg(feature = "neo_ws")]
+pub mod neo_ws;
 
 /// Represents a response from the API
 ///
@@ -172,19 +180,39 @@ pub(crate) fn common_errors(response: &Response) -> Result<(), RequestError> {
     Ok(())
 }
 
-/// The API client
-pub struct Client {
+pub(crate) struct ClientInfo {
     api_key: String,
     client: reqwest::Client,
+}
+
+impl ClientInfo {
+    pub fn new(api_key: String, client: reqwest::Client) -> Self {
+        Self { api_key, client }
+    }
+}
+
+/// The API client
+pub struct Client {
+    client_info: Arc<ClientInfo>,
+
+    #[cfg(feature = "neo_ws")]
+    neo_ws: NeoWs,
 }
 
 impl Client {
     /// Create a new [`Client`] with the given API key
     #[must_use]
     pub fn new(api_key: String) -> Self {
+        let client_info = Arc::new(ClientInfo::new(api_key, reqwest::Client::new()));
+
+        #[cfg(feature = "neo_ws")]
+        let neo_ws = NeoWs::new(Arc::clone(&client_info));
+
         Self {
-            api_key,
-            client: reqwest::Client::new(),
+            client_info,
+
+            #[cfg(feature = "neo_ws")]
+            neo_ws,
         }
     }
 
@@ -210,9 +238,10 @@ impl Client {
             ApodQuery::Today => {}
         }
 
-        query_params.insert("api_key", self.api_key.clone());
+        query_params.insert("api_key", self.client_info.api_key.clone());
 
         let response = self
+            .client_info
             .client
             .get(format!("{API_BASE_ADDRESS}/planetary/apod"))
             .query(&query_params)
@@ -228,6 +257,12 @@ impl Client {
 
         Ok(api_response)
     }
+
+    /// Returns the wrapper for the NeoWs API
+    #[cfg(feature = "neo_ws")]
+    pub fn neo_ws(&self) -> &NeoWs {
+        &self.neo_ws
+    }
 }
 
 impl Default for Client {
@@ -241,6 +276,7 @@ impl Default for Client {
 /// Implements [`serde::Serialize`] and [`serde::Deserialize`][^note] for YYYY-MM-DD format
 ///
 /// [^note]: Deserialize implementation does not strictly check for the YYYY-MM-DD format
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct Date {
     /// The year
     pub year: u32,
@@ -320,5 +356,28 @@ impl<'de> Visitor<'de> for DateVisitor {
         formatter.write_str("a string in the format of YYYY-MM-DD")?;
 
         Ok(())
+    }
+}
+
+pub(crate) fn string_as_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_str(F64Visitor)
+}
+
+struct F64Visitor;
+impl<'de> Visitor<'de> for F64Visitor {
+    type Value = f64;
+    fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+        formatter.write_str("a string representation of a f64")
+    }
+    fn visit_str<E>(self, value: &str) -> Result<f64, E>
+    where
+        E: serde::de::Error,
+    {
+        value.parse::<f64>().map_err(|_err| {
+            E::invalid_value(Unexpected::Str(value), &"a string representation of a f64")
+        })
     }
 }
