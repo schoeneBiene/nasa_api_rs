@@ -3,7 +3,7 @@ use nasa_api::{Client, Date, RequestError};
 #[tokio::main]
 async fn main() -> Result<(), RequestError> {
     // This uses DEMO_KEY
-    let client = Client::new("5Xa1WjF5TRxnrajkt6EW5ybz1Hc540vabqBCLfDd".to_string());
+    let client = Client::default();
 
     let neo_ws = client.neo_ws();
     let response = neo_ws

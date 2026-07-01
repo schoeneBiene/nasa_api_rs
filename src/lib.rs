@@ -115,6 +115,11 @@ impl<T> ApiResponse<T> {
     pub fn ratelimit_remaining(&self) -> u32 {
         self.ratelimit_remaining
     }
+
+    /// Consumes the `ApiResponse` and returns its inner object
+    pub fn into_inner(self) -> T {
+        self.response
+    }
 }
 
 impl<T> Deref for ApiResponse<T> {
